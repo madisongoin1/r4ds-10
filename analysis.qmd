@@ -71,3 +71,13 @@ rank_changes |>
   ) |>
   arrange(release_decade)
 ```
+
+
+```{r}
+film_appearances <- imdb_snapshots |>
+  count(title, name = "snapshot_count")
+
+film_appearances |>
+  count(snapshot_count, name = "number_of_films") |>
+  arrange(snapshot_count)
+```]
