@@ -74,10 +74,33 @@ rank_changes |>
 
 
 ```{r}
-film_appearances <- imdb_snapshots |>
-  count(title, name = "snapshot_count")
+snapshot_urls <- c(
+  "https://web.archive.org/web/20150101/https://www.imdb.com/chart/top/",
+  "https://web.archive.org/web/20170101/https://www.imdb.com/chart/top/",
+  "https://web.archive.org/web/20190101/https://www.imdb.com/chart/top/",
+  "https://web.archive.org/web/20210101/https://www.imdb.com/chart/top/",
+  "https://web.archive.org/web/20220201012049/https://www.imdb.com/chart/top/"
+)
 
-film_appearances |>
-  count(snapshot_count, name = "number_of_films") |>
-  arrange(snapshot_count)
-```]
+snapshot_years <- c(2015, 2017, 2019, 2021, 2022)
+
+tryCatch({
+
+  response <- request(snapshot_urls[1]) |>
+    req_timeout(120) |>
+    req_retry(max_tries = 3) |>
+    req_perform()
+
+  imdb_2015 <- resp_body_html(response) |>
+    html_elements("table") |>
+    html_table() |>
+    purrr::pluck(1) |>
+    select(1, 2)
+
+  print(imdb_2015)
+
+}, error = function(e) {
+  message("The Wayback Machine request failed: ", e$message)
+  message("Keep using the existing imdb_snapshots dataset.")
+})
+```
