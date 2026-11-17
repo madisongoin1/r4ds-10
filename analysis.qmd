@@ -15,3 +15,59 @@ library(httr2)
 library(purrr)
 ```
 
+
+```{r}
+imdb_snapshots <- readRDS("data/imdb_snapshots.rds") |>
+  as_tibble()
+
+print(imdb_snapshots)
+
+names(imdb_snapshots)
+```
+
+
+```{r}
+names(imdb_snapshots)
+```
+
+
+```{r}
+rank_changes <- imdb_snapshots |>
+  filter(snap_year %in% c(2015, 2022)) |>
+  select(title, snap_year, rank) |>
+  pivot_wider(
+    names_from = snap_year,
+    values_from = rank,
+    names_prefix = "rank_"
+  ) |>
+  drop_na() |>
+  mutate(rank_change = abs(rank_2015 - rank_2022)) |>
+  arrange(desc(rank_change)) |>
+  slice_head(n = 10)
+
+rank_changes
+```
+
+
+```{r}
+rank_changes <- imdb_snapshots |>
+  filter(snap_year %in% c(2015, 2022)) |>
+  select(title, snap_year, rank, year) |>
+  pivot_wider(
+    names_from = snap_year,
+    values_from = rank,
+    names_prefix = "rank_"
+  ) |>
+  drop_na() |>
+  mutate(
+    rank_change = abs(rank_2015 - rank_2022),
+    release_decade = (year %/% 10) * 10
+  )
+
+rank_changes |>
+  group_by(release_decade) |>
+  summarise(
+    average_rank_change = mean(rank_change)
+  ) |>
+  arrange(release_decade)
+```
