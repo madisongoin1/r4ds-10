@@ -18,7 +18,7 @@ library(purrr)
 ```{r}
 #| cache: true
 
-snapshot_urls <- c(
+snap_urls <- c(
   "https://web.archive.org/web/20150101/https://www.imdb.com/chart/top/",
   "https://web.archive.org/web/20170101/https://www.imdb.com/chart/top/",
   "https://web.archive.org/web/20190101/https://www.imdb.com/chart/top/",
@@ -26,58 +26,54 @@ snapshot_urls <- c(
   "https://web.archive.org/web/20220201012049/https://www.imdb.com/chart/top/"
 )
 
-snapshot_years <- c(2015, 2017, 2019, 2021, 2022)
+snap_years <- c(2015, 2017, 2019, 2021, 2022)
 
-get_imdb_snapshot <- function(address, snapshot_year) {
+scrape_snapshot <- function(url, snap_year) {
+  page <- request(url) |>
+    req_timeout(60) |>
+    req_retry(max_tries = 3, backoff = ~ 5) |>
+    req_perform() |>
+    resp_body_html()
 
-  response <- request(address) |>
-    req_timeout(120) |>
-    req_retry(max_tries = 3) |>
-    req_perform()
-
-  page <- resp_body_html(response)
-
-  imdb_table <- page |>
+  tbl <- page |>
     html_element("table") |>
     html_table()
 
-  tooltips <- page |>
-    html_elements("td.ratingColumn strong") |>
+  attr_vals <- page |>
+    html_elements("td strong") |>
     html_attr("title")
 
-  tibble(
-    rank_title = imdb_table[[1]],
-    rating = imdb_table[[2]],
-    tooltip = tooltips
-  ) |>
+  tbl |>
+    select(
+      rank_title_year = `Rank & Title`,
+      rating = `IMDb Rating`
+    ) |>
+    mutate(
+      rank_title_year = str_replace_all(rank_title_year, "\n +", " "),
+      number = str_extract(attr_vals, "(?<=based on )[0-9,]+") |>
+        parse_number()
+    ) |>
     separate_wider_regex(
-      rank_title,
+      rank_title_year,
       patterns = c(
         rank = "\\d+",
-        "\\.\\s+",
-        title = ".*",
-        "\\s+\\(",
-        year = "\\d{4}",
+        "\\. ",
+        title = ".+",
+        " +\\(",
+        year = "\\d+",
         "\\)"
       )
     ) |>
     mutate(
-      snap_year = snapshot_year,
       rank = as.integer(rank),
       year = as.integer(year),
-      rating = readr::parse_number(as.character(rating)),
-      number = readr::parse_number(
-        stringr::str_extract(tooltip, "[\\d,]+(?= votes)")
-      )
+      snap_year = snap_year
     ) |>
     select(snap_year, rank, title, year, rating, number)
 }
 
-imdb_snapshots <- map2_dfr(
-  snapshot_urls,
-  snapshot_years,
-  get_imdb_snapshot
-)
+imdb_snapshots <- map2(snap_urls, snap_years, scrape_snapshot) |>
+  list_rbind()
 ```
 
 ```{r}
