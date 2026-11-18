@@ -131,3 +131,50 @@ film_appearances |>
   arrange(snapshot_count)
 ```
 
+```{r}
+rank_change_by_decade <- imdb_snapshots |>
+  filter(snap_year %in% c(2015, 2022)) |>
+  select(title, year, snap_year, rank) |>
+  pivot_wider(
+    names_from = snap_year,
+    values_from = rank,
+    names_prefix = "rank_"
+  ) |>
+  drop_na() |>
+  mutate(
+    rank_change = rank_2022 - rank_2015,
+    release_decade = (year %/% 10) * 10
+  ) |>
+  group_by(release_decade) |>
+  summarise(average_rank_change = mean(rank_change), .groups = "drop") |>
+  mutate(
+    direction = if_else(
+      average_rank_change > 0,
+      "Rank rose",
+      "Rank fell"
+    )
+  )
+
+ggplot(
+  rank_change_by_decade,
+  aes(
+    x = average_rank_change,
+    y = factor(release_decade),
+    fill = direction
+  )
+) +
+  geom_col() +
+  geom_vline(xintercept = 0, color = "gray40") +
+  scale_fill_manual(
+    name = "Direction",
+    values = c("Rank rose" = "#D55E00", "Rank fell" = "#0072B2")
+  ) +
+  labs(
+    title = "IMDb rank changes by film release decade",
+    subtitle = "Average change from 2015 to 2022; positive values mean a higher rank number",
+    x = "Average rank change",
+    y = "Release decade",
+    caption = "190 films appear in both the 2015 and 2022 snapshots."
+  )
+```
+
