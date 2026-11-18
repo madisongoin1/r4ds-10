@@ -15,21 +15,70 @@ library(httr2)
 library(purrr)
 ```
 
-
 ```{r}
-imdb_snapshots <- readRDS("data/imdb_snapshots.rds") |>
-  as_tibble()
+#| cache: true
 
-print(imdb_snapshots)
+snapshot_urls <- c(
+  "https://web.archive.org/web/20150101/https://www.imdb.com/chart/top/",
+  "https://web.archive.org/web/20170101/https://www.imdb.com/chart/top/",
+  "https://web.archive.org/web/20190101/https://www.imdb.com/chart/top/",
+  "https://web.archive.org/web/20210101/https://www.imdb.com/chart/top/",
+  "https://web.archive.org/web/20220201012049/https://www.imdb.com/chart/top/"
+)
 
-names(imdb_snapshots)
+snapshot_years <- c(2015, 2017, 2019, 2021, 2022)
+
+get_imdb_snapshot <- function(address, snapshot_year) {
+
+  response <- request(address) |>
+    req_timeout(120) |>
+    req_retry(max_tries = 3) |>
+    req_perform()
+
+  page <- resp_body_html(response)
+
+  imdb_table <- page |>
+    html_element("table") |>
+    html_table()
+
+  tooltips <- page |>
+    html_elements("td.ratingColumn strong") |>
+    html_attr("title")
+
+  tibble(
+    rank_title = imdb_table[[1]],
+    rating = imdb_table[[2]],
+    tooltip = tooltips
+  ) |>
+    separate_wider_regex(
+      rank_title,
+      patterns = c(
+        rank = "\\d+",
+        "\\.\\s+",
+        title = ".*",
+        "\\s+\\(",
+        year = "\\d{4}",
+        "\\)"
+      )
+    ) |>
+    mutate(
+      snap_year = snapshot_year,
+      rank = as.integer(rank),
+      year = as.integer(year),
+      rating = readr::parse_number(as.character(rating)),
+      number = readr::parse_number(
+        stringr::str_extract(tooltip, "[\\d,]+(?= votes)")
+      )
+    ) |>
+    select(snap_year, rank, title, year, rating, number)
+}
+
+imdb_snapshots <- map2_dfr(
+  snapshot_urls,
+  snapshot_years,
+  get_imdb_snapshot
+)
 ```
-
-
-```{r}
-names(imdb_snapshots)
-```
-
 
 ```{r}
 rank_changes <- imdb_snapshots |>
@@ -41,13 +90,16 @@ rank_changes <- imdb_snapshots |>
     names_prefix = "rank_"
   ) |>
   drop_na() |>
-  mutate(rank_change = abs(rank_2015 - rank_2022)) |>
+  mutate(
+    rank_2015 = as.numeric(rank_2015),
+    rank_2022 = as.numeric(rank_2022),
+    rank_change = abs(rank_2015 - rank_2022)
+  ) |>
   arrange(desc(rank_change)) |>
   slice_head(n = 10)
 
 rank_changes
 ```
-
 
 ```{r}
 rank_changes <- imdb_snapshots |>
@@ -60,6 +112,8 @@ rank_changes <- imdb_snapshots |>
   ) |>
   drop_na() |>
   mutate(
+    rank_2015 = as.numeric(rank_2015),
+    rank_2022 = as.numeric(rank_2022),
     rank_change = abs(rank_2015 - rank_2022),
     release_decade = (year %/% 10) * 10
   )
@@ -72,35 +126,12 @@ rank_changes |>
   arrange(release_decade)
 ```
 
-
 ```{r}
-snapshot_urls <- c(
-  "https://web.archive.org/web/20150101/https://www.imdb.com/chart/top/",
-  "https://web.archive.org/web/20170101/https://www.imdb.com/chart/top/",
-  "https://web.archive.org/web/20190101/https://www.imdb.com/chart/top/",
-  "https://web.archive.org/web/20210101/https://www.imdb.com/chart/top/",
-  "https://web.archive.org/web/20220201012049/https://www.imdb.com/chart/top/"
-)
+film_appearances <- imdb_snapshots |>
+  count(title, name = "snapshot_count")
 
-snapshot_years <- c(2015, 2017, 2019, 2021, 2022)
-
-tryCatch({
-
-  response <- request(snapshot_urls[1]) |>
-    req_timeout(120) |>
-    req_retry(max_tries = 3) |>
-    req_perform()
-
-  imdb_2015 <- resp_body_html(response) |>
-    html_elements("table") |>
-    html_table() |>
-    purrr::pluck(1) |>
-    select(1, 2)
-
-  print(imdb_2015)
-
-}, error = function(e) {
-  message("The Wayback Machine request failed: ", e$message)
-  message("Keep using the existing imdb_snapshots dataset.")
-})
+film_appearances |>
+  count(snapshot_count, name = "number_of_films") |>
+  arrange(snapshot_count)
 ```
+
